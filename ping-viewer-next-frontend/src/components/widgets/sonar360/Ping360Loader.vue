@@ -1,14 +1,14 @@
 <template>
   <div class="flex flex-col h-full">
-    <div class="flex-1 mx-10 my-10 min-h-0">
+    <div class="flex-1 min-h-0" :class="showControls ? 'mx-10 my-10' : ''">
       <FloatingControls v-if="showControls" :is-recording="isRecording">
         <DataRecorder :device="device" :server-url="serverUrl"
           @recording-started="handleRecordingStarted" @recording-stopped="handleRecordingStopped" />
         <v-btn icon @click="toggleFreeze" class="glass-button" size="x-large">
-          <v-icon :color="isFreeze ? '#ef4444' : '#ffffff'" size="36">{{ isFreeze ? 'mdi-play' : 'mdi-pause' }}</v-icon>
+          <v-icon :color="isFreeze ? '#ef4444' : undefined" size="36">{{ isFreeze ? 'mdi-play' : 'mdi-pause' }}</v-icon>
         </v-btn>
         <v-btn icon @click="openSettings" class="glass-button" size="x-large">
-          <v-icon color="#ffffff" size="36">mdi-cog</v-icon>
+          <v-icon size="36">mdi-cog</v-icon>
         </v-btn>
         <v-dialog v-model="isSettingsOpen" max-width="300px">
 
@@ -74,11 +74,11 @@ const props = defineProps({
   },
   radiusLineColor: {
     type: String,
-    default: 'green',
+    default: 'rgba(255, 255, 255, 0.7)',
   },
   markerColor: {
     type: String,
-    default: 'green',
+    default: 'white',
   },
   markerBackgroundColor: {
     type: String,
@@ -86,7 +86,7 @@ const props = defineProps({
   },
   radiusLineWidth: {
     type: Number,
-    default: 0.5,
+    default: 1,
   },
   debug: {
     type: Boolean,
@@ -97,6 +97,8 @@ const props = defineProps({
     default: true,
   },
 });
+
+const emit = defineEmits(['settings-change']);
 
 const liveMeasurement = ref(null);
 const liveAngle = ref(0);
@@ -140,13 +142,6 @@ const toggleFreeze = () => {
 
 const handleRecordingStarted = () => {};
 const handleRecordingStopped = () => {};
-
-function gradiansToDegrees(gradians) {
-  if (gradians === 399) {
-    return 360;
-  }
-  return Math.round((gradians * 360) / 400);
-}
 
 const sendGetConfigRequest = () => {
   if (!socket.value || socket.value.readyState !== WebSocket.OPEN) {
@@ -196,13 +191,28 @@ const connectWebSocket = () => {
           (config.sample_period * SAMPLE_PERIOD_TICK_DURATION * config.number_of_samples * 1500) / 2
         );
 
-        if (config.start_angle === 0 && config.stop_angle === 399) {
+        const isFullCircle = (config.stop_angle + 1) % 400 === config.start_angle % 400;
+        let mechanicalCenterGrad;
+        let sector = 360;
+        if (isFullCircle) {
           startAngle.value = 0;
           endAngle.value = 360;
+          mechanicalCenterGrad = (config.start_angle + 200) % 400;
         } else {
-          startAngle.value = (gradiansToDegrees(config.start_angle) + 180) % 360;
-          endAngle.value = (gradiansToDegrees(config.stop_angle) + 180) % 360;
+          const sectorLenGrad = (((config.stop_angle - config.start_angle) % 400) + 400) % 400;
+          const widthDeg = Math.max(90, Math.round((sectorLenGrad * 360) / 400 / 90) * 90);
+          sector = widthDeg;
+          const halfWidth = widthDeg / 2;
+          startAngle.value = (((360 - halfWidth) % 360) + 360) % 360;
+          endAngle.value = halfWidth;
+          mechanicalCenterGrad = (config.start_angle + sectorLenGrad / 2) % 400;
         }
+        offset.value = (((200 - mechanicalCenterGrad) % 400) + 400) % 400;
+        emit('settings-change', {
+          range: currentRange.value,
+          gain: config.gain_setting,
+          sector,
+        });
 
         return;
       }
@@ -307,10 +317,10 @@ onUnmounted(() => {
 }
 
 .glass-button {
-  background-color: rgba(0, 0, 0, 0.10) !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  background-color: rgba(var(--v-theme-surface), 0.10) !important;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.15) !important;
   backdrop-filter: blur(25px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  box-shadow: 0px 8px 8px 0px #00000033, 0px 8px 12px 6px #00000016 !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+  box-shadow: 0px 8px 8px 0px rgba(0, 0, 0, 0.2), 0px 8px 12px 6px rgba(0, 0, 0, 0.09) !important;
 }
 </style>

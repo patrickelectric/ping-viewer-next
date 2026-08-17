@@ -4,13 +4,13 @@
       <DataRecorder :device="device" :server-url="serverUrl"
         @recording-started="handleRecordingStarted" @recording-stopped="handleRecordingStopped" />
       <v-btn icon @click="toggleFreeze" class="glass-button" size="x-large">
-        <v-icon :color="isFreeze ? '#ef4444' : '#ffffff'" size="36">{{ isFreeze ? 'mdi-play' : 'mdi-pause' }}</v-icon>
+        <v-icon :color="isFreeze ? '#ef4444' : undefined" size="36">{{ isFreeze ? 'mdi-play' : 'mdi-pause' }}</v-icon>
       </v-btn>
       <v-btn icon @click="openSettings" class="glass-button" size="x-large">
-        <v-icon color="#ffffff" size="36">mdi-cog</v-icon>
+        <v-icon size="36">mdi-cog</v-icon>
       </v-btn>
       <v-dialog v-model="isSettingsOpen" max-width="300px">
-        <Ping1DSettings :isOpen="isSettingsOpen" :server-url="serverUrl" :device-id="device.id" />
+        <Ping1DSettings :isOpen="isSettingsOpen" :server-url="serverUrl" :device-id="device.id" @close="isSettingsOpen = false" />
       </v-dialog>
     </FloatingControls>
 
@@ -94,6 +94,8 @@ const props = defineProps({
   },
 });
 
+const emit = defineEmits(['settings-change']);
+
 const socket = ref(null);
 const isFreeze = ref(false);
 const isSettingsOpen = ref(false);
@@ -159,17 +161,20 @@ const connectWebSocket = () => {
       const profile = parsedData?.DeviceMessage?.PingMessage?.Ping1D?.Profile;
 
       if (profile) {
+        const range = profile.scan_length / 1000;
         const newData = {
           sensorData: profile.profile_data,
           currentDepth: profile.distance / 1000,
           minDepth: profile.scan_start / 1000,
-          maxDepth: profile.scan_length / 1000,
+          maxDepth: range,
           confidence: profile.confidence,
-          accuracy:
-            ((100 - profile.confidence) / 100) *
-            (profile.scan_length / 1000 - profile.scan_start / 1000) *
-            0.1,
+          accuracy: ((100 - profile.confidence) / 100) * (range - profile.scan_start / 1000) * 0.1,
         };
+
+        emit('settings-change', {
+          range,
+          gain: profile.gain_setting,
+        });
 
         liveData.value = newData;
 
@@ -232,10 +237,10 @@ watch(
 }
 
 .glass-button {
-  background-color: rgba(0, 0, 0, 0.10) !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  background-color: rgba(var(--v-theme-surface), 0.10) !important;
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.15) !important;
   backdrop-filter: blur(25px) !important;
-  -webkit-backdrop-filter: blur(16px) !important;
-  box-shadow: 0px 8px 8px 0px #00000033, 0px 8px 12px 6px #00000016 !important;
+  -webkit-backdrop-filter: blur(25px) !important;
+  box-shadow: 0px 8px 8px 0px rgba(0, 0, 0, 0.2), 0px 8px 12px 6px rgba(0, 0, 0, 0.09) !important;
 }
 </style>

@@ -37,9 +37,9 @@
           <span class="text-caption text-medium-emphasis mr-1">{{ distanceLabel }}</span>
         </div>
         <div class="d-flex align-center gap-2">
-          <v-slider v-model="range" :min="1.8" :max="60" :step="0.1" density="compact" hide-details class="flex-grow-1"
+          <v-slider v-model="range" :min="2" :max="60" :step="1" density="compact" hide-details class="flex-grow-1"
             @update:modelValue="handleRangeChange" />
-          <v-text-field v-model.number="range" type="number" :min="1.8" :max="60" :step="0.1" density="compact"
+          <v-text-field v-model.number="range" type="number" :min="2" :max="60" :step="1" density="compact"
             hide-details style="width: 82px !important; flex: 0 0 auto" @update:modelValue="handleRangeChange" />
         </div>
 
@@ -52,29 +52,52 @@
           <span class="text-caption text-medium-emphasis mr-1">degrees</span>
         </div>
         <div class="d-flex align-center gap-2">
-          <v-slider v-model="width" :min="0" :max="360" step="30" show-ticks="always" tick-size="4" thumb-label
-            :ticks="{ 0: '0', 180: '180', 360: '360' }" density="compact" hide-details class="flex-grow-1"
+          <v-slider v-model="width" :min="90" :max="360" step="90" show-ticks="always" tick-size="4" thumb-label
+            :ticks="{ 90: '90', 180: '180', 270: '270', 360: '360' }" density="compact" hide-details class="flex-grow-1"
             @update:modelValue="handleWidthChange" />
         </div>
 
-        <div v-if="width < 360">
-          <div class="d-flex align-center justify-space-between mb-1 mt-4">
-            <v-tooltip text="Center angle of scanning sector" location="left">
+        <v-btn block variant="tonal" @click="showMountOptions = !showMountOptions" class="mb-2 mt-4">
+          <v-icon :icon="showMountOptions ? 'mdi-chevron-up' : 'mdi-chevron-down'" class="mr-2"></v-icon>
+          {{ showMountOptions ? 'Hide Mount Options' : 'Show Mount Options' }}
+        </v-btn>
+
+        <v-expand-transition>
+          <div v-if="showMountOptions">
+            <div>
+              <div class="d-flex align-center justify-space-between mb-1 mt-2">
+                <v-tooltip text="Mount offset of scanning sector" location="left">
+                  <template v-slot:activator="{ props }">
+                    <span v-bind="props" class="text-body-2 text-medium-emphasis">Mount Offset</span>
+                  </template>
+                </v-tooltip>
+                <span class="text-caption text-medium-emphasis mr-1">degrees</span>
+              </div>
+
+              <div class="d-flex align-center gap-2">
+                <v-slider v-model="centerAngle" :min="0" :max="360" step="5" show-ticks="always" tick-size="4" thumb-label
+                  :ticks="{ 0: '0', 180: '180', 360: '360' }" density="compact" hide-details class="flex-grow-1"
+                  @update:modelValue="handleCenterAngleChange" />
+              </div>
+            </div>
+
+            <v-tooltip text="Used when the sonar is mounted upside down" location="left">
               <template v-slot:activator="{ props }">
-                <span v-bind="props" class="text-body-2 text-medium-emphasis">Center Angle</span>
+                <div v-bind="props" style="display: inline-block">
+                  <v-checkbox
+                    v-model="sharedHeadDown"
+                    label="Head-down"
+                    hide-details
+                    density="compact"
+                    class="mt-2 mb-2"
+                  />
+                </div>
               </template>
             </v-tooltip>
-            <span class="text-caption text-medium-emphasis mr-1">degrees</span>
           </div>
+        </v-expand-transition>
 
-          <div class="d-flex align-center gap-2">
-            <v-slider v-model="centerAngle" :min="0" :max="360" step="5" show-ticks="always" tick-size="4" thumb-label
-              :ticks="{ 0: '0', 180: '180', 360: '360' }" density="compact" hide-details class="flex-grow-1"
-              @update:modelValue="handleCenterAngleChange" />
-          </div>
-        </div>
-
-        <v-divider class="mb-4"></v-divider>
+        <v-divider class="mb-4 mt-4" />
 
         <v-btn block variant="tonal" @click="showAdvanced = !showAdvanced" class="mb-4">
           <v-icon :icon="showAdvanced ? 'mdi-chevron-up' : 'mdi-chevron-down'" class="mr-2"></v-icon>
@@ -196,6 +219,7 @@
 import { useDebounceFn } from '@vueuse/core';
 import { computed, ref, watch } from 'vue';
 import { useUnits } from '../../../composables/useUnits';
+import { useHeadDown } from './useHeadDown';
 
 const { distanceLabel, speedUnit } = useUnits();
 
@@ -239,9 +263,11 @@ const DEBOUNCE_VALUE_MS = 500;
 const isLoading = ref(false);
 const isInitializing = ref(true);
 const showAdvanced = ref(false);
+const showMountOptions = ref(false);
 const autoMode = ref(true);
 const range = ref(10);
 const centerAngle = ref(180);
+const sharedHeadDown = useHeadDown();
 const width = ref(180);
 const angleRange = ref([0, 360]);
 
@@ -255,33 +281,40 @@ const settings = ref({
 });
 
 function calculateSectorAngles() {
-  let startAngle = (centerAngle.value - width.value / 2) % 360;
-  let endAngle = centerAngle.value + width.value / 2;
-
-  if (startAngle < 0) {
-    startAngle = 0;
-    endAngle = width.value;
+  if (width.value >= 360) {
+    const startAngle = (((centerAngle.value - 180) % 360) + 360) % 360;
+    return { startAngle, endAngle: startAngle, isFullCircle: true };
   }
 
-  if (endAngle >= 360) {
-    startAngle = 360 - width.value;
-    endAngle = 360;
+  const halfWidth = width.value / 2;
+  const startAngle = (((centerAngle.value - halfWidth) % 360) + 360) % 360;
+  const endAngle = (((centerAngle.value + halfWidth) % 360) + 360) % 360;
+
+  return { startAngle, endAngle, isFullCircle: false };
+}
+
+function emitSectorToDisplay(sector) {
+  if (sector.isFullCircle) {
+    emit('update:angles', { startAngle: 0, endAngle: 360 });
+    return;
   }
 
-  return { startAngle, endAngle };
+  const halfWidth = width.value / 2;
+  emit('update:angles', {
+    startAngle: (((360 - halfWidth) % 360) + 360) % 360,
+    endAngle: halfWidth,
+  });
 }
 
 function handleCenterAngleChange(newCenter) {
   centerAngle.value = newCenter;
-  const { startAngle, endAngle } = calculateSectorAngles();
-  emit('update:angles', { startAngle, endAngle });
+  emitSectorToDisplay(calculateSectorAngles());
   debouncedSaveSettings({ ...settings.value });
 }
 
 function handleWidthChange(newWidth) {
   width.value = newWidth;
-  const { startAngle, endAngle } = calculateSectorAngles();
-  emit('update:angles', { startAngle, endAngle });
+  emitSectorToDisplay(calculateSectorAngles());
   debouncedSaveSettings({ ...settings.value });
 }
 
@@ -289,9 +322,16 @@ const debouncedSaveSettings = useDebounceFn(async (updatedSettings) => {
   if (isInitializing.value) return;
 
   try {
-    const { startAngle, endAngle } = calculateSectorAngles();
-    const startGradians = degreesToGradians(startAngle);
-    const endGradians = degreesToGradians(endAngle);
+    const sector = calculateSectorAngles();
+    let startGradians;
+    let endGradians;
+    if (sector.isFullCircle) {
+      startGradians = degreesToGradians(sector.startAngle) % 400;
+      endGradians = (startGradians + 399) % 400;
+    } else {
+      startGradians = degreesToGradians(sector.startAngle);
+      endGradians = degreesToGradians(sector.endAngle);
+    }
 
     const modifyCommand = {
       command: 'ModifyDevice',
@@ -387,15 +427,29 @@ const fetchCurrentSettings = async () => {
         speed_of_sound: 1500,
       };
 
-      const startAngleDegrees = gradiansToDegrees(config.start_angle);
-      const stopAngleDegrees = gradiansToDegrees(config.stop_angle);
+      const isFullCircleConfig = (config.stop_angle + 1) % 400 === config.start_angle % 400;
 
-      centerAngle.value = (startAngleDegrees + stopAngleDegrees) / 2;
-      width.value = stopAngleDegrees - startAngleDegrees;
+      if (isFullCircleConfig) {
+        const startAngleDegrees = gradiansToDegrees(config.start_angle);
+        width.value = 360;
+        centerAngle.value = (((startAngleDegrees + 180) % 360) + 360) % 360;
+        if (centerAngle.value === 0) {
+          centerAngle.value = 360;
+        }
+        angleRange.value = [0, 360];
+      } else {
+        const startAngleDegrees = gradiansToDegrees(config.start_angle);
+        const stopAngleDegrees = gradiansToDegrees(config.stop_angle);
 
-      angleRange.value = [startAngleDegrees, stopAngleDegrees];
+        const rawWidth = (((stopAngleDegrees - startAngleDegrees) % 360) + 360) % 360;
+        width.value = Math.max(90, Math.round(rawWidth / 90) * 90);
+        const halfWidth = width.value / 2;
+        const rawCenter = (startAngleDegrees + halfWidth + 360) % 360;
+        centerAngle.value = Math.round(rawCenter / 5) * 5;
 
-      handleAngleChange(angleRange.value);
+        angleRange.value = [startAngleDegrees, stopAngleDegrees];
+      }
+      emitSectorToDisplay(calculateSectorAngles());
       range.value = calculateRange();
     }
   } catch (error) {
@@ -412,11 +466,8 @@ defineExpose({ fetchCurrentSettings });
 
 function calculateRange() {
   const samplePeriod = settings.value.sample_period * SAMPLE_PERIOD_TICK_DURATION;
-  return (
-    Math.round(
-      ((samplePeriod * settings.value.number_of_samples * settings.value.speed_of_sound) / 2) * 10
-    ) / 10
-  );
+  const raw = (samplePeriod * settings.value.number_of_samples * settings.value.speed_of_sound) / 2;
+  return Math.max(2, Math.round(raw));
 }
 
 function calculateSamplePeriod(desiredRange) {
@@ -463,7 +514,7 @@ const handleAngleChange = (newAngles) => {
 };
 const handleRangeChange = (newRange) => {
   if (!autoMode.value) {
-    range.value = Number(newRange.toFixed(1));
+    range.value = Math.round(newRange);
     return;
   }
 
@@ -492,9 +543,9 @@ const handleRangeChange = (newRange) => {
   }
 
   adjustTransmitDuration();
-  range.value = Number(newRange.toFixed(1));
-  emit('rangeChange', newRange);
-  emit('update:range', newRange);
+  range.value = Math.round(newRange);
+  emit('rangeChange', range.value);
+  emit('update:range', range.value);
 
   debouncedSaveSettings({ ...settings.value });
 };

@@ -354,6 +354,8 @@ const displaySettings = reactive({
   aScan: true,
   colorPalette: 'Thermal Blue',
   debugMode: false,
+  backgroundMode: 'gradient',
+  backgroundColor: '#001a2e',
 });
 
 const ping1DSettings = reactive({
@@ -377,9 +379,9 @@ const ping360Settings = reactive({
   numMarkers: 5,
   showRadiusLines: true,
   showMarkers: true,
-  radiusLineColor: '#4caf50',
-  markerColor: '#4caf50',
-  radiusLineWidth: 0.5,
+  radiusLineColor: 'rgba(255, 255, 255, 0.7)',
+  markerColor: 'white',
+  radiusLineWidth: 1,
   debug: false,
   colorPalette: 'Thermal Blue',
   customPalette: [],
@@ -566,7 +568,15 @@ const loadSettings = () => {
     }
     if (savedCommon) Object.assign(commonSettings, JSON.parse(savedCommon));
     if (savedPing1D) Object.assign(ping1DSettings, JSON.parse(savedPing1D));
-    if (savedPing360) Object.assign(ping360Settings, JSON.parse(savedPing360));
+    if (savedPing360) {
+      const {
+        radiusLineColor: _,
+        markerColor: __,
+        radiusLineWidth: ___,
+        ...parsed360
+      } = JSON.parse(savedPing360);
+      Object.assign(ping360Settings, parsed360);
+    }
     if (savedDisplay) {
       const parsed = JSON.parse(savedDisplay);
       Object.assign(displaySettings, parsed);
@@ -1187,6 +1197,24 @@ provide('recordings', {
   fetchRecordings,
 });
 
+const updateAppBackground = () => {
+  if (displaySettings.backgroundMode === 'custom' && displaySettings.backgroundColor) {
+    document.documentElement.style.setProperty('--app-bg', displaySettings.backgroundColor);
+  } else {
+    document.documentElement.style.setProperty(
+      '--app-bg',
+      'radial-gradient(ellipse at 50% 40%, #005C84, #00223A)'
+    );
+  }
+};
+
+watch(
+  () => [displaySettings.backgroundMode, displaySettings.backgroundColor],
+  updateAppBackground,
+  { immediate: true }
+);
+
+provide('glass', glass);
 provide('yawAngle', yawAngle);
 provide('yawConnectionStatus', yawConnectionStatus);
 provide('connectYawWebSocket', connectYawWebSocket);
@@ -1398,7 +1426,7 @@ const isReplayProgressDialogOpen = computed(
 }
 
 .menu-content {
-  width: 300px;
+  width: 100%;
   padding: 0;
 }
 
@@ -1530,11 +1558,6 @@ const isReplayProgressDialogOpen = computed(
   max-height: calc(100vh - 2 * (var(--button-size) + var(--button-gap)));
   overflow: hidden;
   user-select: none;
-}
-
-.menu-content {
-  width: 100%;
-  padding: 1rem;
 }
 
 .v-list {

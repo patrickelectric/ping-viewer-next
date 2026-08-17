@@ -3,7 +3,7 @@
     "beforeDevCommand": "bun run dev",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist",
-    "devUrl": "http://localhost:1420"
+    "devUrl": "http://localhost:4936"
   },
   "bundle": {
     "active": true,
@@ -27,7 +27,7 @@
     },
     "windows": [
       {
-        "title": "ping-viewer-next-desktop",
+        "title": "Ping Viewer",
         "width": 800,
         "height": 600,
         "useHttpsScheme": true

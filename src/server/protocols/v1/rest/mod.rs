@@ -283,7 +283,9 @@ pub struct Extras {
 
 #[derive(Debug, Serialize, Deserialize, Apiv2Schema)]
 pub struct CockpitExtras {
+    #[serde(rename = "targetSystem")]
     pub target_system: String,
+    #[serde(rename = "targetCockpitApiVersion")]
     pub target_cockpit_api_version: String,
     pub widgets: Vec<CockpitWidget>,
 }
@@ -291,16 +293,21 @@ pub struct CockpitExtras {
 #[derive(Debug, Serialize, Deserialize, Apiv2Schema)]
 pub struct CockpitWidget {
     name: String,
+    #[serde(rename = "configIframeUrl")]
     config_iframe_url: Option<String>,
+    #[serde(rename = "iframeUrl")]
     iframe_url: String,
+    #[serde(rename = "iframeIcon")]
     iframe_icon: String,
     version: String,
+    #[serde(rename = "useExtensionPathAsBaseUrl")]
+    use_extension_path_as_base_url: bool,
 }
 
 impl Default for ServerMetadata {
     fn default() -> Self {
         Self {
-            name: "Ping Viewer Next",
+            name: "Ping Viewer",
             description: "A ping protocol extension for expose devices to web.",
             icon: "mdi-compass-outline",
             company: "BlueRobotics",
@@ -351,6 +358,7 @@ async fn cockpit_extras(
                 iframe_url: format!("/addons/widget/{}/?uuid={}", name, device.id),
                 iframe_icon: format!("/images/{}.png", name),
                 version: "1.0.0".to_string(),
+                use_extension_path_as_base_url: true,
             })
         })
         .collect();

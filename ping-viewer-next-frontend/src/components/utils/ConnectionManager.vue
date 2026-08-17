@@ -53,7 +53,7 @@
               <template v-slot:append>
                 <div class="d-flex align-center gap-2">
                   <v-btn variant="elevated" class="rounded-lg -mb-1" :color="getStatusColor(device.status)" size="small">
-                    {{ device.status }}
+                    {{ getStatusLabel(device.status) }}
                   </v-btn>
 
                   <v-menu location="start" offset="5">
@@ -292,6 +292,7 @@ watch(
   async (newValue) => {
     if (newValue) {
       await fetchInitialRecordingStatuses();
+      logWidgetUrls();
     }
   }
 );
@@ -327,9 +328,8 @@ const connectionTypes = [
 const getStatusColor = (status) => {
   switch (status) {
     case 'ContinuousMode':
-      return 'success';
     case 'Running':
-      return 'info';
+      return 'success';
     case 'Error':
       return 'error';
     default:
@@ -337,8 +337,35 @@ const getStatusColor = (status) => {
   }
 };
 
+const getStatusLabel = (status) => {
+  switch (status) {
+    case 'ContinuousMode':
+    case 'Running':
+      return 'Connected';
+    case 'Error':
+      return 'Error';
+    default:
+      return 'Available';
+  }
+};
+
 const toggleManualCreate = () => {
   showManualCreate.value = !showManualCreate.value;
+};
+
+const getWidgetUrl = (device) => {
+  const widgetType = device.device_type?.toLowerCase();
+  if (widgetType === undefine) return null;
+  return `${window.location.origin}/addons/widget/${widgetType}/?server=${props.serverUrl}&uuid=${device.id}`;
+};
+
+const logWidgetUrls = () => {
+  for (const device of devices.value) {
+    const url = getWidgetUrl(device);
+    if (url) {
+      console.log(`Widget URL [${device.device_type} ${device.id}]: ${url}`);
+    }
+  }
 };
 
 const fetchDevices = async () => {
@@ -357,6 +384,7 @@ const fetchDevices = async () => {
     const data = await response.json();
     devices.value = data.DeviceInfo || [];
     error.value = null;
+    logWidgetUrls();
   } catch (err) {
     console.error('Error fetching devices:', err);
     error.value = `Failed to fetch devices: ${err.message}`;

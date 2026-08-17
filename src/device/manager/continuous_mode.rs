@@ -355,7 +355,7 @@ impl DeviceManager {
                 let mut angle = initial_settings.start_angle;
                 let step_size = initial_settings.num_steps as u16;
                 let is_full_circle =
-                    initial_settings.start_angle == 0 && initial_settings.stop_angle == 399;
+                    (initial_settings.stop_angle + 1) % 400 == initial_settings.start_angle % 400;
                 let mut direction = 1i16;
 
                 loop {
@@ -430,18 +430,87 @@ impl DeviceManager {
             } else {
                 current_angle + step_size
             }
-        } else if *direction > 0 {
-            if current_angle + step_size > stop_angle {
-                *direction = -1;
-                stop_angle
-            } else {
-                current_angle + step_size
-            }
-        } else if (current_angle as i32 - step_size as i32) <= start_angle as i32 {
-            *direction = 1;
-            start_angle
         } else {
-            current_angle.wrapping_sub(step_size)
+            // Work in linear sector position so wrap-around sectors (start_angle > stop_angle) are
+            // handled identically to non-wrap ones. `current_linear` is 0 at start_angle and
+            // `sector_len` at stop_angle.
+            let sector_len = ((stop_angle as i32 - start_angle as i32) + 400) % 400;
+            let current_linear = ((current_angle as i32 - start_angle as i32) + 400) % 400;
+            let step = step_size as i32;
+
+            if *direction > 0 {
+                if current_linear + step > sector_len {
+                    *direction = -1;
+                    stop_angle
+                } else {
+                    ((start_angle as i32 + current_linear + step).rem_euclid(400)) as u16
+                }
+            } else if current_linear - step <= 0 {
+                *direction = 1;
+                start_angle
+            } else {
+                ((start_angle as i32 + current_linear - step).rem_euclid(400)) as u16
+            }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn run_scan(start: u16, stop: u16, step: u16) -> Vec<u16> {
+        let is_full_circle = (stop + 1) % 400 == start % 400;
+        let mut dir: i16 = 1;
+        let mut angle = start;
+        let mut visited = Vec::new();
+        for _ in 0..1200 {
+            visited.push(angle);
+            angle = DeviceManager::calculate_next_angle(
+                angle,
+                step,
+                is_full_circle,
+                &mut dir,
+                start,
+                stop,
+            );
+        }
+        visited
+    }
+
+    #[test]
+    fn non_wrap_sector_is_bounded() {
+        let visited = run_scan(100, 300, 1);
+        let min = *visited.iter().min().unwrap();
+        let max = *visited.iter().max().unwrap();
+        assert_eq!(min, 100);
+        assert_eq!(max, 300);
+    }
+
+    #[test]
+    fn wrap_sector_only_covers_sector() {
+        let visited = run_scan(300, 100, 1);
+        for &a in &visited {
+            let in_sector = a >= 300 || a <= 100;
+            assert!(
+                in_sector,
+                "angle {a} is outside wrap sector [300..399]∪[0..100]"
+            );
+        }
+    }
+
+    #[test]
+    fn wrap_sector_does_not_touch_opposite_arc() {
+        let visited = run_scan(300, 100, 1);
+        for a in 101..=299u16 {
+            assert!(!visited.contains(&a), "angle {a} should never be visited");
+        }
+    }
+
+    #[test]
+    fn full_circle_sweeps_everything() {
+        let visited = run_scan(0, 399, 1);
+        let set: std::collections::HashSet<_> = visited.into_iter().collect();
+        assert_eq!(set.len(), 400);
     }
 }

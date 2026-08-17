@@ -11,7 +11,7 @@
 	}">
 		<template v-for="tick in depthTicks" :key="tick.value">
 			<div class="absolute right-0 w-3 h-px bg-white/70" :style="{ top: `${tick.position}%` }"></div>
-			<span class="absolute text-xl font-medium text-white whitespace-nowrap depth-label" :style="{
+			<span class="absolute text-3xl font-medium text-white whitespace-nowrap depth-label" :style="{
 				right: '6px',
 				top: `${tick.position}%`,
 				transform: 'translateY(-100%)',
@@ -80,6 +80,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { onKeyStroke } from '@vueuse/core';
 import VueDraggableResizable from 'vue-draggable-resizable';
 import { useUnits } from '../../../composables/useUnits';
 import AScanLine from './AScanLine.vue';
@@ -240,6 +241,12 @@ watch(
     drawOverlay();
   }
 );
+
+onKeyStroke(['r', 'R'], () => {
+  historicalData.value = [];
+  updateVirtualMaxDepth();
+  drawOverlay();
+});
 
 watch(
   () => historicalData.value,

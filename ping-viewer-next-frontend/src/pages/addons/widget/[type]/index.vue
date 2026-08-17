@@ -22,9 +22,14 @@
     </div>
 
     <div v-else-if="widgetComponent && deviceData" class="widget-container h-full w-full">
-      <component :is="widgetComponent" v-bind="widgetProps" class="h-full w-full bg-transparent" ref="widgetRef" />
-      <SonarMask :width="dimensions.width" :height="dimensions.height" :type="widgetType" :polar_mode="polarMode" :isRecording="isRecording"
-        class="widget-mask" @button-click="handleMaskButtonClick" />
+      <component :is="widgetComponent" v-bind="widgetProps" class="h-full w-full bg-transparent" ref="widgetRef"
+        @settings-change="handleWidgetSettingsChange" />
+      <Ping360WidgetControls v-if="widgetType === 'ping360'" :is-recording="isRecording"
+        :range="ping360Range" :gain="ping360Gain" :sector="ping360Sector"
+        @button-click="handleMaskButtonClick" />
+      <Ping1DWidgetControls v-if="widgetType === 'ping1d'" :is-recording="isRecording"
+        :is-auto-gain="isAutoGain" :range="ping1DRange" :gain="ping1DGain"
+        @button-click="handleMaskButtonClick" />
     </div>
   </div>
 </template>
@@ -36,12 +41,14 @@ import Ping1DLoader from '@components/widgets/sonar1d/Ping1DLoader.vue';
 import Ping360Loader from '@components/widgets/sonar360/Ping360Loader.vue';
 import { computed, defineComponent, nextTick, onMounted, onUnmounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
-import SonarMask from '../components/SonarMask.vue';
+import Ping1DWidgetControls from '../components/Ping1DWidgetControls.vue';
+import Ping360WidgetControls from '../components/Ping360WidgetControls.vue';
 
 export default defineComponent({
   name: 'WidgetView',
   components: {
-    SonarMask,
+    Ping360WidgetControls,
+    Ping1DWidgetControls,
   },
   setup() {
     const route = useRoute();
@@ -55,6 +62,15 @@ export default defineComponent({
     const dimensions = ref({ width: 0, height: 0 });
     const yawAngle = ref(0);
     const isRecording = ref(false);
+    const ping360WidgetSettings = ref({
+      range: null,
+      gain: null,
+      sector: null,
+    });
+    const ping1DWidgetSettings = ref({
+      range: null,
+      gain: null,
+    });
 
     let resizeObserver = null;
     let datalakeUnsubscribe = null;
@@ -189,9 +205,9 @@ export default defineComponent({
       numMarkers: 5,
       showRadiusLines: true,
       showMarkers: true,
-      radiusLineColor: '#4caf50',
-      markerColor: '#4caf50',
-      radiusLineWidth: 0.5,
+      radiusLineColor: 'rgba(255, 255, 255, 0.7)',
+      markerColor: 'white',
+      radiusLineWidth: 1,
     };
 
     const ping1DProps = {
@@ -231,7 +247,7 @@ export default defineComponent({
         ...ping1DProps,
         width: dimensions.value.width,
         height: dimensions.value.height,
-        columnCount: Math.floor(dimensions.value.width / 20),
+        columnCount: 1200,
       };
     });
 
@@ -367,6 +383,89 @@ export default defineComponent({
             }
             break;
 
+          case 'step_range':
+            if (widgetType.value === 'ping360' && deviceInstance.value.ping360) {
+              const rangeSequence = [2, 4, 6, 8, 10, 15, 20, 30, 40, 50];
+              const settings = await deviceInstance.value.ping360.getSettings();
+              if (settings) {
+                const currentRange = deviceInstance.value.ping360.calculateRange(settings);
+                const currentIndex = findClosestValueIndex(currentRange, rangeSequence);
+                const newIndex =
+                  value === 'up'
+                    ? Math.min(rangeSequence.length - 1, currentIndex + 1)
+                    : Math.max(0, currentIndex - 1);
+                if (newIndex !== currentIndex) {
+                  await deviceInstance.value.ping360.setRange(`${rangeSequence[newIndex]}m`);
+                }
+              }
+            } else if (widgetType.value === 'ping1d' && deviceInstance.value.ping1D) {
+              const rangeSequence = [1, 2, 5, 10, 15, 20, 30, 40, 50, 60, 75];
+              const settings = await deviceInstance.value.ping1D.getSettings();
+              if (settings) {
+                if (settings.mode_auto === 1) {
+                  await deviceInstance.value.ping1D.setAutoMode(false);
+                }
+                const currentRange = settings.scan_length;
+                const currentIndex = findClosestValueIndex(currentRange, rangeSequence);
+                const newIndex =
+                  value === 'up'
+                    ? Math.min(rangeSequence.length - 1, currentIndex + 1)
+                    : Math.max(0, currentIndex - 1);
+                if (newIndex !== currentIndex) {
+                  await deviceInstance.value.ping1D.setRange(
+                    settings.scan_start,
+                    rangeSequence[newIndex]
+                  );
+                }
+              }
+            }
+            break;
+
+          case 'step_sector':
+            if (widgetType.value === 'ping360' && deviceInstance.value.ping360) {
+              const sectorSequence = [90, 180, 360];
+              const settings = await deviceInstance.value.ping360.getSettings();
+              if (settings) {
+                const gradiansToDegrees = (g) => (g === 399 ? 360 : Math.round((g * 360) / 400));
+                const isFullCircle = (settings.stop_angle + 1) % 400 === settings.start_angle % 400;
+                let currentSector;
+                if (isFullCircle) {
+                  currentSector = 360;
+                } else {
+                  const startDeg = gradiansToDegrees(settings.start_angle);
+                  const stopDeg = gradiansToDegrees(settings.stop_angle);
+                  currentSector = (((stopDeg - startDeg) % 360) + 360) % 360;
+                  if (currentSector === 0) currentSector = 360;
+                }
+
+                const currentIndex = findClosestValueIndex(currentSector, sectorSequence);
+                const newIndex =
+                  value === 'up'
+                    ? Math.min(sectorSequence.length - 1, currentIndex + 1)
+                    : Math.max(0, currentIndex - 1);
+                if (newIndex !== currentIndex) {
+                  const newSector = sectorSequence[newIndex];
+                  const centerAngle = 180;
+                  const halfSector = newSector / 2;
+                  const startAngleDegrees = (centerAngle - halfSector + 360) % 360;
+                  const stopAngleDegrees = (centerAngle + halfSector) % 360;
+                  const startAngle =
+                    deviceInstance.value.ping360.degreesToGradians(startAngleDegrees);
+                  const stopAngle =
+                    stopAngleDegrees === 0
+                      ? 399
+                      : deviceInstance.value.ping360.degreesToGradians(stopAngleDegrees);
+
+                  await deviceInstance.value.ping360.setSettings({
+                    ...settings,
+                    start_angle: startAngle,
+                    stop_angle: stopAngle,
+                  });
+                }
+              }
+            }
+            break;
+
           case 'set_sector':
             if (widgetType.value === 'ping360' && deviceInstance.value.ping360) {
               const settings = await deviceInstance.value.ping360.getSettings();
@@ -467,6 +566,70 @@ export default defineComponent({
       }
     };
 
+    const isAutoGain = computed(() => {
+      if (widgetType.value !== 'ping1d') return false;
+      const settings = deviceInstance.value?.data?.ping1DSettings;
+      return settings?.mode_auto === 1;
+    });
+
+    const handleWidgetSettingsChange = (settings) => {
+      if (widgetType.value === 'ping360') {
+        ping360WidgetSettings.value = {
+          ...ping360WidgetSettings.value,
+          ...settings,
+        };
+        return;
+      }
+
+      if (widgetType.value === 'ping1d') {
+        ping1DWidgetSettings.value = {
+          ...ping1DWidgetSettings.value,
+          ...settings,
+        };
+      }
+    };
+
+    const ping1DRange = computed(() => {
+      if (ping1DWidgetSettings.value.range != null) return ping1DWidgetSettings.value.range;
+      const settings = deviceInstance.value?.data?.ping1DSettings?.value;
+      return settings?.scan_length ?? null;
+    });
+
+    const ping1DGain = computed(() => {
+      if (ping1DWidgetSettings.value.gain != null) return ping1DWidgetSettings.value.gain;
+      const settings = deviceInstance.value?.data?.ping1DSettings?.value;
+      return settings?.gain_setting ?? null;
+    });
+
+    const ping360Range = computed(() => {
+      if (ping360WidgetSettings.value.range != null) return ping360WidgetSettings.value.range;
+      const settings = deviceInstance.value?.data?.ping360Settings?.value;
+      if (!settings || !deviceInstance.value?.ping360) return null;
+      return deviceInstance.value.ping360.calculateRange(settings);
+    });
+
+    const ping360Gain = computed(() => {
+      if (ping360WidgetSettings.value.gain != null) return ping360WidgetSettings.value.gain;
+      const settings = deviceInstance.value?.data?.ping360Settings?.value;
+      return settings?.gain_setting ?? null;
+    });
+
+    const ping360Sector = computed(() => {
+      if (ping360WidgetSettings.value.sector != null) return ping360WidgetSettings.value.sector;
+      const settings = deviceInstance.value?.data?.ping360Settings?.value;
+      if (!settings) return null;
+
+      const isFullCircle = (settings.stop_angle + 1) % 400 === settings.start_angle % 400;
+      if (isFullCircle) return 360;
+
+      const startDeg =
+        settings.start_angle === 399 ? 360 : Math.round((settings.start_angle * 360) / 400);
+      const stopDeg =
+        settings.stop_angle === 399 ? 360 : Math.round((settings.stop_angle * 360) / 400);
+      const sector = (((stopDeg - startDeg) % 360) + 360) % 360;
+      return sector === 0 ? 360 : sector;
+    });
+
     const polarMode = computed(() => {
       if (deviceInstance.value && widgetType.value === 'ping360') {
         if (deviceInstance.value.data.polarMode) {
@@ -534,7 +697,7 @@ export default defineComponent({
                   {
                     id: deviceId.value,
                     device_type: route.params.type?.toUpperCase() || 'Ping360',
-                    status: 'ContinuousMode',
+                    status: 'Available',
                     source: {
                       UdpStream: {
                         ip: new URL(serverUrl.value).hostname,
@@ -558,7 +721,7 @@ export default defineComponent({
           device = {
             id: deviceId.value,
             device_type: route.params.type.toUpperCase(),
-            status: 'ContinuousMode',
+            status: 'Available',
             source: {
               UdpStream: {
                 ip: new URL(serverUrl.value).hostname,
@@ -624,10 +787,10 @@ export default defineComponent({
       }
 
       if (!isLoading.value && deviceData.value && deviceId.value) {
-        deviceInstance.value = pingDeviceStore.usePingDevice(deviceId.value);
-
         const wsHost = new URL(serverUrl.value).host;
         pingDeviceStore.setServerUrl(wsHost);
+
+        deviceInstance.value = pingDeviceStore.usePingDevice(deviceId.value);
 
         deviceInstance.value.common.connect();
       }
@@ -683,6 +846,13 @@ export default defineComponent({
       handleMaskButtonClick,
       polarMode,
       isRecording,
+      isAutoGain,
+      handleWidgetSettingsChange,
+      ping1DRange,
+      ping1DGain,
+      ping360Range,
+      ping360Gain,
+      ping360Sector,
     };
   },
 });
@@ -705,10 +875,6 @@ body {
 .widget-container {
   position: relative;
   overflow: visible;
-}
-
-.widget-mask {
-  pointer-events: auto !important;
 }
 
 * {
